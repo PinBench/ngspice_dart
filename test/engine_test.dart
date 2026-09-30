@@ -97,6 +97,120 @@ void main() {
     });
   });
 
+  group('Transistor DC', () {
+    test('an NPN in its active region multiplies the base current by BF', () {
+      // Ib = (5 - Vbe) / 100k ~ 43 uA, so Ic ~ 4.3 mA and the 500 ohm
+      // collector load drops ~2.15 V.
+      final e = runDeck([
+        'NPN active',
+        'V1 1 0 dc 5',
+        'RB 1 b 100k',
+        'RC 1 c 500',
+        'Q1 c b 0 QN',
+        '.model QN NPN(IS=1e-14 BF=100)',
+        '.op',
+        '.end',
+      ]);
+      final vb = e.getVector('v(b)')!.first;
+      final ib = (5 - vb) / 100e3;
+      final ic = (5 - e.getVector('v(c)')!.first) / 500;
+      expect(vb, inInclusiveRange(0.6, 0.8));
+      expect(ic / ib, closeTo(100, 2));
+    });
+
+    test('an NPN switch saturates, its collector near the emitter', () {
+      final e = runDeck([
+        'NPN switch',
+        'V1 1 0 dc 5',
+        'RB 1 b 1k',
+        'RC 1 c 220',
+        'Q1 c b 0 QN',
+        '.model QN NPN(IS=1e-14 BF=100)',
+        '.op',
+        '.end',
+      ]);
+      expect(e.getVector('v(c)')!.first, lessThan(0.3));
+    });
+
+    test('a PNP mirrors the NPN, and its model may follow it', () {
+      final e = runDeck([
+        'PNP active',
+        'V1 1 0 dc 5',
+        'Q1 c b 1 QP',
+        'RB b 0 100k',
+        'RC c 0 500',
+        '.model QP PNP(IS=1e-14 BF=100)',
+        '.op',
+        '.end',
+      ]);
+      final vb = e.getVector('v(b)')!.first;
+      final ib = vb / 100e3;
+      final ic = e.getVector('v(c)')!.first / 500;
+      expect(5 - vb, inInclusiveRange(0.6, 0.8));
+      expect(ic / ib, closeTo(100, 2));
+    });
+
+    test('an NMOS in saturation follows the square law', () {
+      // Vov = 4 - 2 = 2 V, so Id = KP/2 * Vov^2 = 2 mA and the drain sits at
+      // 5 - 2 = 3 V, still above Vov: saturated, as assumed.
+      final e = runDeck([
+        'NMOS sat',
+        'V1 1 0 dc 5',
+        'VG g 0 dc 4',
+        'RD 1 d 1k',
+        'M1 d g 0 0 MN',
+        '.model MN NMOS(LEVEL=1 VTO=2 KP=1m)',
+        '.op',
+        '.end',
+      ]);
+      expect(e.getVector('v(d)')!.first, closeTo(3.0, 1e-3));
+    });
+
+    test('an NMOS below threshold is off', () {
+      final e = runDeck([
+        'NMOS off',
+        'V1 1 0 dc 5',
+        'VG g 0 dc 1',
+        'RD 1 d 1k',
+        'M1 d g 0 0 MN',
+        '.model MN NMOS(LEVEL=1 VTO=2 KP=1m)',
+        '.op',
+        '.end',
+      ]);
+      expect(e.getVector('v(d)')!.first, closeTo(5.0, 1e-3));
+    });
+
+    test('a PMOS conducts with its gate below the source', () {
+      // Vgs = 1 - 5 = -4 V against VTO = -2 V: Id = 2 mA into a 1k load.
+      final e = runDeck([
+        'PMOS sat',
+        'V1 1 0 dc 5',
+        'VG g 0 dc 1',
+        'M1 d g 1 1 MP',
+        'RD d 0 1k',
+        '.model MP PMOS(LEVEL=1 VTO=-2 KP=1m)',
+        '.op',
+        '.end',
+      ]);
+      expect(e.getVector('v(d)')!.first, closeTo(2.0, 1e-3));
+    });
+
+    test('W/L scales a MOSFET', () {
+      final e = runDeck([
+        'NMOS W/L',
+        'V1 1 0 dc 5',
+        'VG g 0 dc 3',
+        'RD 1 d 1k',
+        'M1 d g 0 0 MN W=4u L=2u',
+        '.model MN NMOS(LEVEL=1 VTO=2 KP=1m)',
+        '.op',
+        '.end',
+      ]);
+      // Id = KP * (W/L) / 2 * 1^2 = 1 mA.
+      expect(e.getVector('v(d)')!.first, closeTo(4.0, 1e-3));
+    });
+  });
+
   group('Transient RC charging', () {
     test('matches analytic exponential (UIC, cap starts at 0)', () {
       final e = runDeck([
