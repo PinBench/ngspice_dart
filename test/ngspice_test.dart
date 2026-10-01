@@ -86,6 +86,29 @@ void main() {
       expect(ng.getVector('v(1)')!.first, closeTo(3.0, 1e-9));
     });
 
+    test('alter changes a resistor in place, as a switch or sensor needs', () {
+      final ng = Ngspice()..init();
+      ng.circuit([
+        '* divider whose lower leg is altered',
+        'V1 1 0 dc 10',
+        'R1 1 2 1k',
+        'R2 2 0 1k',
+        '.op',
+        '.end',
+      ]);
+      ng.command('op');
+      expect(ng.getVector('v(2)')!.first, closeTo(5.0, 1e-9));
+
+      expect(ng.command('alter R2 = 3000'), equals(0));
+      ng.command('op');
+      expect(ng.getVector('v(2)')!.first, closeTo(7.5, 1e-9));
+    });
+
+    test('a zero or negative resistance is refused, not divided by', () {
+      final ng = loadDivider();
+      expect(ng.command('alter R1 = 0'), equals(1));
+    });
+
     test('altering an unknown source reports failure', () {
       final ng = loadDivider();
       expect(ng.command('alter V_missing = 5'), equals(1));

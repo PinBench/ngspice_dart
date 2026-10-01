@@ -15,7 +15,9 @@ import 'device.dart';
 class Capacitor extends Device {
   final int n1;
   final int n2;
-  final double capacitance;
+
+  /// Mutable so the interactive `alter` command can change it in place.
+  double capacitance;
 
   /// Optional user-specified initial voltage (`ic=`).
   final double? initialVoltage;

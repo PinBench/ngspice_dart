@@ -5,6 +5,7 @@ import '../devices/diode.dart';
 import '../devices/inductor.dart';
 import '../devices/resistor.dart';
 import '../devices/sources.dart';
+import '../devices/transistors.dart';
 import '../devices/waveform.dart';
 import 'value_parser.dart';
 
@@ -21,10 +22,20 @@ class NetlistParseException implements Exception {
 class NetlistParser {
   /// Named `.model` definitions, keyed by lower-case model name.
   final Map<String, DiodeModel> _diodeModels = {};
+  final Map<String, BjtModel> _bjtModels = {};
+  final Map<String, MosfetModel> _mosfetModels = {};
 
   Circuit parse(List<String> rawLines) {
     final circuit = Circuit();
     final lines = _preprocess(rawLines);
+
+    // Models first: SPICE lets a `.model` card follow the elements that use
+    // it, and a transistor cannot be built without its model.
+    for (final line in lines) {
+      if (line.toLowerCase().startsWith('.model')) {
+        _parseModel(_tokenize(line), line);
+      }
+    }
 
     var first = true;
     for (final line in lines) {
@@ -138,6 +149,12 @@ class NetlistParser {
       case 'G':
         _parseControlled(tokens, line, circuit, voltageOutput: false);
         break;
+      case 'Q':
+        _parseBjt(tokens, line, circuit);
+        break;
+      case 'M':
+        _parseMosfet(tokens, line, circuit);
+        break;
       default:
         throw NetlistParseException('Unsupported element type "$type"', line);
     }
@@ -205,6 +222,48 @@ class NetlistParser {
       model = _diodeModels[tokens[3].toLowerCase()] ?? const DiodeModel();
     }
     circuit.add(Diode(tokens[0], a, c, model));
+  }
+
+  /// `Qxxx nc nb ne [ns] model [area]` — the model is the first token after
+  /// the three terminals that names a BJT model; a substrate node is ignored.
+  void _parseBjt(List<String> tokens, String line, Circuit circuit) {
+    if (tokens.length < 5) {
+      throw NetlistParseException('Expected: Qxxx nc nb ne model', line);
+    }
+    final model = tokens
+        .skip(4)
+        .map((t) => _bjtModels[t.toLowerCase()])
+        .firstWhere((m) => m != null, orElse: () => null);
+    if (model == null) {
+      throw NetlistParseException('No NPN/PNP .model for ${tokens[0]}', line);
+    }
+    circuit.add(Bjt(tokens[0], circuit.node(tokens[1]), circuit.node(tokens[2]),
+        circuit.node(tokens[3]), model));
+  }
+
+  /// `Mxxx nd ng ns nb model [L=..] [W=..]` — the body node is accepted and
+  /// assumed tied to the source.
+  void _parseMosfet(List<String> tokens, String line, Circuit circuit) {
+    if (tokens.length < 6) {
+      throw NetlistParseException('Expected: Mxxx nd ng ns nb model', line);
+    }
+    final model = _mosfetModels[tokens[5].toLowerCase()];
+    if (model == null) {
+      throw NetlistParseException('No NMOS/PMOS .model for ${tokens[0]}', line);
+    }
+    double dimension(String key) {
+      for (final t in tokens.skip(6)) {
+        final eq = t.indexOf('=');
+        if (eq > 0 && t.substring(0, eq).toLowerCase() == key) {
+          return SpiceValue.tryParse(t.substring(eq + 1)) ?? 1.0;
+        }
+      }
+      return 1.0;
+    }
+
+    circuit.add(Mosfet(tokens[0], circuit.node(tokens[1]),
+        circuit.node(tokens[2]), circuit.node(tokens[3]), model,
+        aspect: dimension('w') / dimension('l')));
   }
 
   void _parseControlled(List<String> tokens, String line, Circuit circuit,
@@ -437,8 +496,7 @@ class NetlistParser {
     final name = tokens[1].toLowerCase();
     final typePart = tokens[2];
     // Model type may be `D` or `D(...)`; parameters follow as key=value.
-    final isDiode = typePart.toLowerCase().startsWith('d');
-    if (!isDiode) return;
+    final type = RegExp(r'^[a-z]+').stringMatch(typePart.toLowerCase()) ?? '';
 
     final params = <String, double>{};
     final joined = tokens.sublist(2).join(' ');
@@ -448,11 +506,38 @@ class NetlistParser {
       final v = SpiceValue.tryParse(match.group(2)!);
       if (v != null) params[key] = v;
     }
+    final temp = (params['tnom'] ?? 26.85) + 273.15;
+
+    switch (type) {
+      case 'npn' || 'pnp':
+        _bjtModels[name] = BjtModel(
+          pnp: type == 'pnp',
+          isat: params['is'] ?? 1e-16,
+          bf: params['bf'] ?? 100,
+          br: params['br'] ?? 1,
+          nf: params['nf'] ?? 1,
+          nr: params['nr'] ?? 1,
+          temp: temp,
+        );
+        return;
+      case 'nmos' || 'pmos':
+        _mosfetModels[name] = MosfetModel(
+          pmos: type == 'pmos',
+          vto: params['vto'] ?? 0,
+          kp: params['kp'] ?? 2e-5,
+          lambda: params['lambda'] ?? 0,
+        );
+        return;
+      case 'd':
+        break;
+      default:
+        return;
+    }
     _diodeModels[name] = DiodeModel(
       isat: params['is'] ?? 1e-14,
       n: params['n'] ?? 1.0,
       rs: params['rs'] ?? 0.0,
-      temp: (params['tnom'] ?? 26.85) + 273.15,
+      temp: temp,
     );
   }
 

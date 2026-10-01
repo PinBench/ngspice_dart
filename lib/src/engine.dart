@@ -2,6 +2,8 @@ import 'analysis/result.dart';
 import 'analysis/simulator.dart';
 import 'circuit/circuit.dart';
 import 'circuit/mna.dart';
+import 'devices/capacitor.dart';
+import 'devices/resistor.dart';
 import 'devices/sources.dart';
 import 'numeric/complex.dart';
 import 'parser/netlist_parser.dart';
@@ -96,9 +98,10 @@ class NgspiceEngine {
 
   /// Handles the interactive `alter <device> = <value>` command (also accepts
   /// `alter <device> <value>` and ngspice's `@name[param] = value` form),
-  /// changing the DC value of an independent source in place. The new value
-  /// takes effect on the next analysis. Returns true if a matching source was
-  /// found and updated.
+  /// changing a device's principal value in place: an independent source's DC
+  /// value, a resistor's resistance or a capacitor's capacitance. The new
+  /// value takes effect on the next analysis. Returns true if a matching
+  /// device was found and updated.
   bool _handleAlter(String command) {
     final c = _circuit;
     if (c == null) return false;
@@ -135,8 +138,12 @@ class NgspiceEngine {
         d.dcOverride = value;
       } else if (d is CurrentSource) {
         d.dcOverride = value;
+      } else if (d is Resistor && value > 0) {
+        d.resistance = value;
+      } else if (d is Capacitor && value >= 0) {
+        d.capacitance = value;
       } else {
-        return false; // found, but not an alterable independent source
+        return false; // found, but not an alterable device, or a bad value
       }
       _simulator = null; // invalidate stale result; next analysis re-solves
       return true;
