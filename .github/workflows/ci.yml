@@ -1,0 +1,31 @@
+name: CI
+
+# Formatting, analysis and the tests, on every push to main and every pull
+# request. The PinBench app pins commits of this package, so main should
+# always be a commit worth pinning.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Format, analyze, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+        with:
+          sdk: stable
+      - run: dart pub get
+      - run: dart format --output=none --set-exit-if-changed .
+      - run: dart analyze --fatal-infos
+      - run: dart test
