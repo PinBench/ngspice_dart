@@ -1,7 +1,9 @@
 name: ngspice_dart
 description: "A native Dart port of the ngspice mixed-signal circuit simulator: pure-Dart netlist parsing, MNA assembly, and OP/DC/transient/AC analyses with no native dependency."
 version: 0.2.1
-homepage: https://github.com/burhankhanzada/ngspice_dart
+homepage: https://github.com/PinBench/ngspice_dart
+repository: https://github.com/PinBench/ngspice_dart
+issue_tracker: https://github.com/PinBench/ngspice_dart/issues
 
 environment:
   sdk: ^3.5.0
