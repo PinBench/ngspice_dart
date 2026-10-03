@@ -4,9 +4,12 @@ name: CI
 # request. The PinBench app pins commits of this package, so main should
 # always be a commit worth pinning.
 on:
+  # Prose changes nothing this checks.
   push:
     branches: [main]
+    paths-ignore: ["**.md", LICENSE, NOTICE]
   pull_request:
+    paths-ignore: ["**.md", LICENSE, NOTICE]
 
 permissions:
   contents: read
